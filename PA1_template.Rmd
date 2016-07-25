@@ -1,25 +1,239 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Reproducible Research - Course Project 1"
+output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+ <br>
 
-## Loading and preprocessing the data
+## Introduction
 
+The purpose of this project is to analyse activity data obtained from a personal monitoring device. The data was collected
+at 5 minute intervals during the day for a period of two months.
 
+<br>
 
-## What is mean total number of steps taken per day?
+### Loading and pre-processing the data
 
+First we need to load some libraries:
 
+```{r, message=FALSE} 
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
 
-## What is the average daily activity pattern?
+Next we load the data:
 
+```{r}
+df0 <- read.csv('activity.csv', header = TRUE, sep = ",")
+```
 
+Now, we'll perform a few transformations to prepare the data for further analysis:
 
-## Imputing missing values
+```{r}
+# split data per day
+stepsDay <- split(df0$steps, df0$date)
 
+# create dataframe (each day is an observation, each column is a time period)
+df1 <- data.frame(matrix(unlist(stepsDay), nrow=61, byrow=T),stringsAsFactors=FALSE)
 
+# rename columns of new dataframe
+names(df1) <- unique(factor(df0$interval))
 
-## Are there differences in activity patterns between weekdays and weekends?
+# add column with dates
+df1 <- cbind(Date = ymd(unique(df0$date)), df1)
+```
+
+<br>
+
+### What is the mean total number of steps taken per day?
+
+For this part of the assignment we will ignore the missing values (NA's)
+
+```{r, warning=FALSE}
+# add columns with total number of steps per day
+df1 <- cbind(df1, Total.Steps = rowSums(df1[,2:289]))
+
+# histogram of total number of steps taken each day
+plt <- ggplot(df1, aes(df1$Total.Steps))
+plt + geom_histogram(binwidth = 1000, color = "black", fill = "blue") + xlab("Total Number of Steps") + ylab("Steps Count") + 
+  ggtitle("Histogram of Number of Steps")
+```
+
+```{r, echo=FALSE, results='hide', warning=FALSE, message=FALSE}
+ggsave("plot1.png", path = getwd())
+dev.off()
+```
+
+The mean and median steps are (in that order):
+
+```{r}
+# mean and median number of steps per day
+stepsMean <- mean(df1$Total.Steps, na.rm = TRUE)
+stepsMedian <- median(df1$Total.Steps, na.rm = TRUE)
+```
+
+```{r, echo=FALSE}
+stepsMean
+stepsMedian
+```
+
+<br>
+
+### What is the average daily activity pattern?
+
+```{r}
+# remove days with no data recorded
+df2 <- filter(df1, !is.na(Total.Steps))
+
+# average across days for each interval
+intervalAvg <- apply(df2[,2:289], 2, mean)
+
+# create addtional dataframe for time series plot
+df22 <- data.frame(row.names = as.character(c(1:288)))
+df22 <- cbind(df22, as.numeric(unique(df0$interval)), intervalAvg)
+names(df22) <- c("Interval", "Average")
+
+# time series plot of 5-minute intervals vs average of steps for each interval across days
+plt <- ggplot(df22, aes(x = Interval, y = Average))
+plt + geom_line(color = "red") + xlab("5-Minute Interval") + ylab("Average Steps") +
+  ggtitle("Average Steps per 5-minute interval")
+```
+
+```{r, echo=FALSE, results='hide', warning=FALSE, message=FALSE}
+ggsave("plot2.png", path = getwd())
+dev.off()
+```
+The 5-minute interval with the maximum number of steps is:
+
+```{r}
+# find 5-minute interval with maximum number of steps
+fiveMinInt <- which(intervalAvg %in% max(intervalAvg))
+```
+
+```{r, echo=FALSE}
+fiveMinInt
+```
+
+<br>
+
+### Imputing missing values
+
+The total number of rows with missing values (NA's) is:
+
+```{r}
+# number of rows with NA's
+numNAs <- length(df1$Total.Steps[is.na(df1$Total.Steps)])
+```
+
+```{r, echo=FALSE}
+numNAs
+```
+
+Next, we will recreate the original dataset but this time we will use the mean of 5-minute intervals averaged across days to fill in the missing data
+
+```{r}
+# recreate original but with missing data filled in
+df3 <- data.frame(matrix(unlist(stepsDay), nrow=61, byrow=T),stringsAsFactors=FALSE)
+
+# obtain indexes of rows with NA's
+idx <- which(is.na(df1$Total.Steps))
+
+# replace rows with missing NA's with mean of 5-minute intervals averaged across days
+for (i in idx){
+  df3[i,] <- unname(intervalAvg)
+} 
+```
+
+So the new mean and medians are:
+
+```{r}
+# add columns with total number of steps per day
+df3 <- cbind(df3, Total.Steps = rowSums(df3))
+
+# add column with dates
+df3 <- cbind(Date = ymd(unique(df0$date)), df3)
+
+# mean and median number of steps per day
+stepsMean2 <- mean(df3$Total.Steps, na.rm = TRUE)
+stepsMedian2 <- median(df3$Total.Steps, na.rm = TRUE)
+```
+
+```{r, echo=FALSE}
+stepsMean2
+stepsMedian2
+```
+
+And the new histogram is:
+
+```{r}
+# histogram of total number of steps taken each day
+plt <- ggplot(df3, aes(Total.Steps))
+plt + geom_histogram(binwidth = 1000, color = "black", fill = "green") + xlab("Total Number of Steps") + ylab("Steps Count") + 
+  ggtitle("Histogram of Number of Steps")
+```
+
+```{r, echo=FALSE, results='hide', warning=FALSE, message=FALSE}
+ggsave("plot3.png", path = getwd())
+dev.off()
+```
+
+<br>
+
+### Are there differences in activity patterns between weekdays and weekends?
+
+First we'll discriminate the rows in our dataset according to the categories "Weekday/Weekend"
+
+```{r}
+# add column with factor levels "weekday/weekend"
+a <- weekdays(df3$Date, abbreviate = TRUE)
+b <- gsub("S(at|un)", "Weekend", a)
+b[grep("end", b, invert = TRUE)] <- "Weekday"
+df3 <- cbind(df3, b)
+
+# rename columns of new dataframe
+names(df3) <- c(names(df2), "Weekday-Weekend")
+```
+
+Next, we'll calculate the average of the 5-minute interval for both weekdays and weekends
+
+```{r}
+df3_wd <- filter(df3, df3$`Weekday-Weekend` == "Weekday")
+df3_we <- filter(df3, df3$`Weekday-Weekend` == "Weekend")
+
+# average across days for each interval
+intervalAvg_we <- apply(df3_we[,2:289], 2, mean)
+intervalAvg_wd <- apply(df3_wd[,2:289], 2, mean)
+```
+
+Finally, we'll manipulate this data to create a new data frame to plot the data 
+
+```{r}
+# create addtional dataframe for time series plot
+df33_wd <- data.frame(row.names = as.character(c(1:288)))
+df33_wd <- cbind(df33_wd, as.numeric(unique(df0$interval)), rep(c("Weekday"), 288), intervalAvg_wd)
+names(df33_wd) <- c("Interval", "Weekday-Weekend", "Average")
+
+df33_we <- data.frame(row.names = as.character(c(1:288)))
+df33_we <- cbind(df33_we, as.numeric(unique(df0$interval)), rep(c("Weekend"), 288), intervalAvg_we)
+names(df33_we) <- c("Interval", "Weekday-Weekend", "Average")
+
+df33 <- rbind(df33_wd, df33_we)
+```
+
+Now we can plot the 5-minute interval averaged across days of the week and weekends in a panel plot
+
+```{r}
+# time series plot of the 5-minutes interval and the average number of steps taken, averaged across weekdays or weekends
+plt <- ggplot(df33, aes(x=Interval, y=Average))
+plt + geom_line(color = "red") + facet_wrap(~`Weekday-Weekend`, ncol = 1) + xlab("5-Minute Interval") + ylab("Average Steps") +
+  ggtitle("Average Steps per 5-minute interval")
+```
+
+```{r, echo=FALSE, results='hide', warning=FALSE, message=FALSE}
+ggsave("plot4.png", path = getwd())
+dev.off()
+```
